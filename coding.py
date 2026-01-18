@@ -258,12 +258,12 @@ class NN_TanhHidden:
             self.b1 += self.lr * np.sum(d1, axis=0, keepdims=True) / X.shape[0]
 
         
-        # Add print every 200 epochs
-        if epoch % 200 == 0:
-            preds = (a2 > 0.5).astype(int).flatten()
-            acc = np.mean(preds == y.flatten()) * 100
-            mse = np.mean(error**2)
-            print(f"Epoch {epoch}, MSE: {mse:.4f}, Accuracy: {acc:.2f}%")
+            # Add print every 200 epochs
+            if epoch % 200 == 0:
+                preds = (a2 > 0.5).astype(int).flatten()
+                acc = np.mean(preds == y.flatten()) * 100
+                mse = np.mean(error**2)
+                print(f"Epoch {epoch}, MSE: {mse:.4f}, Accuracy: {acc:.2f}%")
 
     def predict(self, X):
         a1 = self.tanh(np.dot(X, self.w1) + self.b1)
