@@ -174,8 +174,8 @@ class NN_SigmoidHidden:
         self.epochs = epochs
         self.w1 = np.random.randn(n_inputs, n_hidden) * np.sqrt(1 / n_inputs)
         self.b1 = np.zeros((1, n_hidden))
-        self.w2 = np.random.randn(n_hidden, n_outputs) * np.sqrt(1 / n_hidden)
-        self.b2 = np.zeros((1, n_outputs))
+        self.w2 = np.random.randn(n_hidden, 1) * np.sqrt(1 / n_hidden)  # <-- 1 output neuron
+        self.b2 = np.zeros((1, 1))
 
     def sigmoid(self, x):
         return 1 / (1 + np.exp(-np.clip(x, -500, 500)))
@@ -184,32 +184,37 @@ class NN_SigmoidHidden:
         return x * (1 - x)
 
     def train(self, X, y):
-        for epoch in range(self.epochs):
-            # forward
+        for epoch in range(2000):
             z1 = np.dot(X, self.w1) + self.b1
             a1 = self.sigmoid(z1)
             z2 = np.dot(a1, self.w2) + self.b2
             a2 = self.sigmoid(z2)
 
-            # backprop
             error = y - a2
             d2 = error * self.sigmoid_derivative(a2)
             d1 = np.dot(d2, self.w2.T) * self.sigmoid_derivative(a1)
 
-            # update
+            # Update
             self.w2 += self.lr * np.dot(a1.T, d2) / X.shape[0]
             self.b2 += self.lr * np.sum(d2, axis=0, keepdims=True) / X.shape[0]
             self.w1 += self.lr * np.dot(X.T, d1) / X.shape[0]
             self.b1 += self.lr * np.sum(d1, axis=0, keepdims=True) / X.shape[0]
 
+            # Optional: print every 200 epochs
+            if epoch % 200 == 0:
+                preds = (a2 > 0.5).astype(int).flatten()
+                acc = np.mean(preds == y.flatten()) * 100
+                mse = np.mean(error**2)
+                print(f"Epoch {epoch}, MSE: {mse:.4f}, Accuracy: {acc:.2f}%")
+
     def predict(self, X):
         a1 = self.sigmoid(np.dot(X, self.w1) + self.b1)
         a2 = self.sigmoid(np.dot(a1, self.w2) + self.b2)
-        return (a2 > 0.5).astype(int).flatten()  # threshold 0.5
-    
-    # Accuracy
+        return (a2 > 0.5).astype(int).flatten()  # <-- returns shape (n_samples,)
+
     def accuracy(self, X, y):
         return np.mean(self.predict(X) == y.flatten()) * 100
+
 
 #Tanh Hidden + Sigmoid Output (3rd method to test)
 class NN_TanhHidden:
@@ -252,6 +257,14 @@ class NN_TanhHidden:
             self.w1 += self.lr * np.dot(X.T, d1) / X.shape[0]
             self.b1 += self.lr * np.sum(d1, axis=0, keepdims=True) / X.shape[0]
 
+        
+        # Add print every 200 epochs
+        if epoch % 200 == 0:
+            preds = (a2 > 0.5).astype(int).flatten()
+            acc = np.mean(preds == y.flatten()) * 100
+            mse = np.mean(error**2)
+            print(f"Epoch {epoch}, MSE: {mse:.4f}, Accuracy: {acc:.2f}%")
+
     def predict(self, X):
         a1 = self.tanh(np.dot(X, self.w1) + self.b1)
         a2 = self.sigmoid(np.dot(a1, self.w2) + self.b2)
@@ -283,7 +296,7 @@ print(f"Learning Rate:", lr, "\n")
 
 
 #This will go back to BLOCK 2 (BPNN & Epochs)
-nn = NN_TanhHidden(n_inputs=input_size, n_hidden=hidden_size, n_outputs=output_size,
+nn = NN_SigmoidHidden(n_inputs=input_size, n_hidden=hidden_size, n_outputs=output_size,
           learning_rate=lr, epochs=epochs)
 
 
