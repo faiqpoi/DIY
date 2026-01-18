@@ -10,7 +10,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
 import matplotlib.pyplot as plt
 import seaborn as sns
-import pickle
 
 # =============================================================================
 # BLOCK 1: LOAD DATA
