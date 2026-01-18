@@ -296,7 +296,7 @@ print(f"Learning Rate:", lr, "\n")
 
 
 #This will go back to BLOCK 2 (BPNN & Epochs)
-nn = NN_SigmoidHidden(n_inputs=input_size, n_hidden=hidden_size, n_outputs=output_size,
+nn = NN_ReluHidden(n_inputs=input_size, n_hidden=hidden_size, n_outputs=output_size,
           learning_rate=lr, epochs=epochs)
 
 
