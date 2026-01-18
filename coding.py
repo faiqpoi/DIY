@@ -3,187 +3,330 @@
 # =============================================================================
 import pandas as pd
 import numpy as np
+from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import classification_report
+import pickle
 
-# Set a random seed for reproducible results
+# =============================================================================
+# BLOCK 1: LOAD DATA
+# =============================================================================
 np.random.seed(42)
+pd.set_option('display.max_columns', None)
+pd.set_option('display.width', 200)
+df = pd.read_csv('ShillBidding.csv') 
 
-# =============================================================================
-# BLOCK 1: LOAD AND PREPROCESS DATA
-# =============================================================================
-print("--- BLOCK 1: Loading and Preprocessing ---")
-df = pd.read_csv('obesityProccessed.csv')
+print("Summary Statistics:")
+print(df.iloc[:, :7].describe())
+print("\n")
+print(df.iloc[:, 7:].describe())
 
-# Describe the Table
-print("\n Descriptibe Statistics :")
-print(df.describe().T)
+# Features & target
+X = df.drop('Class', axis=1)
+y = df['Class']  
 
-# Detect and handle missing values
-#print("\nMissing Values per Column\n")
-#print(df.isnull().sum())
 
-missing_count = df.isnull().sum().sum()
-print(f"-> Missing values detected: {missing_count}")
-if missing_count > 0:
-    df.dropna(inplace=True)
-    print("-> Rows with missing values have been dropped.")
+# Check for missing values
+missingX = X.isnull().sum()
+print("\nMissing values per feature:")
+print(missingX)
 
-# Map target 'NObeyesdad' to 0-6 range (since values are 0,1,3,4,5,6,7)
-unique_targets = sorted(df['NObeyesdad'].unique())
-target_mapping = {val: i for i, val in enumerate(unique_targets)}
-inv_mapping = {i: val for val, i in target_mapping.items()}
-df['NObeyesdad_Mapped'] = df['NObeyesdad'].map(target_mapping)
+missingY = y.isnull().sum()
+print("\nMissing values in target:")
+print(missingY)
 
-print(f"-> Target mapping: {target_mapping}")
-print(f"-> Dataset shape: {df.shape}")
+# Convert y to numpy only after checking
+y = y.values.reshape(-1,1)
 
-# =============================================================================
-# BLOCK 2: DATA PREPARATION
-# =============================================================================
-X = df.drop(['NObeyesdad', 'NObeyesdad_Mapped'], axis=1).values
-y = df['NObeyesdad_Mapped'].values
 
-# Split the data (80% Train, 20% Test)
-num_samples = X.shape[0]
-indices = np.arange(num_samples)
-np.random.shuffle(indices)
-X, y = X[indices], y[indices]
 
-split_point = int(0.8 * num_samples)
-X_train, X_test = X[:split_point], X[split_point:]
-y_train, y_test = y[:split_point], y[split_point:]
+# Unique values for each feature
+unique_table = pd.DataFrame({
+    "Feature": X.columns,
+    "Total Unique Values": [X[col].nunique() for col in X.columns]
+})
 
-# Scale the data
+print("\n=== UNIQUE VALUES TABLE ===")
+print(unique_table)
+
+# Feature with highest unique values
+highest_unique_feature = unique_table.sort_values(
+    by="Total Unique Values", ascending=False
+).iloc[0]
+
+print("\n=== FEATURE WITH HIGHEST UNIQUE VALUES ===")
+print(highest_unique_feature)
+
+# Unique values in target class
+target_unique_count = pd.Series(y.flatten()).nunique()
+
+print("\n=== TOTAL UNIQUE VALUES IN TARGET CLASS ===")
+print(f"Target Class -> Total Unique Values: {target_unique_count}")
+
+
+
+
+# Convert categorical columns to numeric
+categorical_cols = X.select_dtypes(include='object').columns
+for col in categorical_cols:
+    le = LabelEncoder()
+    X[col] = le.fit_transform(X[col].astype(str))
+
+X = X.values  # convert to numpy array
+
+print("\nPreprocessed successfully.")
+
+
+
+# Split 80% train, 20% test
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, shuffle=True)
+print(f"\nTraining samples: {X_train.shape[0]}, Testing samples: {X_test.shape[0]}")
+
+# Scale numeric features
 train_mean = X_train.mean(axis=0)
 train_std = X_train.std(axis=0)
-train_std[train_std == 0] = 1 # Prevent division by zero
-X_train_scaled = (X_train - train_mean) / train_std
-X_test_scaled = (X_test - train_mean) / train_std
+train_std[train_std==0] = 1
+X_train_scaled = (X_train - train_mean)/train_std
+X_test_scaled = (X_test - train_mean)/train_std
 
-# One-hot encode labels for the Neural Network
-def to_one_hot(labels, num_classes):
-    return np.eye(num_classes)[labels]
 
-y_train_oh = to_one_hot(y_train, 7)
+
 
 # =============================================================================
-# BLOCK 3: NEURAL NETWORK IMPLEMENTATION (Multi-Class)
+# BLOCK 2: NEURAL NETWORK (Binary) BPNN
 # =============================================================================
-class NeuralNetwork:
-    def __init__(self, input_size, hidden_size, output_size):
-        # He initialization for better convergence
-        self.weights1 = np.random.randn(input_size, hidden_size) * np.sqrt(2./input_size)
-        self.biases1 = np.zeros((1, hidden_size))
-        self.weights2 = np.random.randn(hidden_size, output_size) * np.sqrt(2./hidden_size)
-        self.biases2 = np.zeros((1, output_size))
 
+#Relu Hidden + Sigmoid Output (first method to test)
+class NN_ReluHidden:
+    def __init__(self, n_inputs, n_hidden, n_outputs, learning_rate, epochs):
+        self.lr = learning_rate
+        self.epochs = epochs
+        
+        # He initialization for ReLU hidden layer
+        self.w1 = np.random.randn(n_inputs, n_hidden) * np.sqrt(2 / n_inputs)
+        self.b1 = np.zeros((1, n_hidden))
+        self.w2 = np.random.randn(n_hidden, n_outputs) * np.sqrt(1 / n_hidden)
+        self.b2 = np.zeros((1, n_outputs))
+        
+        self.encoder = OneHotEncoder(sparse_output=False)
+
+    # Activation functions
     def relu(self, x):
         return np.maximum(0, x)
 
     def relu_derivative(self, x):
         return (x > 0).astype(float)
 
-    def softmax(self, x):
-        exps = np.exp(x - np.max(x, axis=1, keepdims=True))
-        return exps / np.sum(exps, axis=1, keepdims=True)
+    def sigmoid(self, x):
+        return 1 / (1 + np.exp(-np.clip(x, -500, 500)))
 
-    def forward(self, X):
-        self.z1 = np.dot(X, self.weights1) + self.biases1
-        self.a1 = self.relu(self.z1)
-        self.z2 = np.dot(self.a1, self.weights2) + self.biases2
-        self.probs = self.softmax(self.z2)
-        return self.probs
+    def sigmoid_derivative(self, x):
+        return x * (1 - x)
 
-    def backward(self, X, y_oh, learning_rate):
+    # Training method
+    def train(self, X, y):
+        y_oh = self.encoder.fit_transform(y.reshape(-1,1))
         m = X.shape[0]
-        # Backprop for Softmax + Cross-Entropy is simply (Probs - Labels)
-        dz2 = self.probs - y_oh
-        dw2 = np.dot(self.a1.T, dz2) / m
-        db2 = np.sum(dz2, axis=0, keepdims=True) / m
 
-        da1 = np.dot(dz2, self.weights2.T)
-        dz1 = da1 * self.relu_derivative(self.z1)
-        dw1 = np.dot(X.T, dz1) / m
-        db1 = np.sum(dz1, axis=0, keepdims=True) / m
+        for epoch in range(self.epochs):
+            # Forward pass
+            z1 = np.dot(X, self.w1) + self.b1
+            a1 = self.relu(z1)
+            z2 = np.dot(a1, self.w2) + self.b2
+            a2 = self.sigmoid(z2)
 
-        self.weights1 -= learning_rate * dw1
-        self.biases1 -= learning_rate * db1
-        self.weights2 -= learning_rate * dw2
-        self.biases2 -= learning_rate * db2
+            # Backprop
+            error = y_oh - a2
+            mse = np.mean(error ** 2)
+
+            d2 = error * self.sigmoid_derivative(a2)
+            d1 = np.dot(d2, self.w2.T) * self.relu_derivative(a1)
+
+            # Update weights
+            self.w2 += np.dot(a1.T, d2) * self.lr / m
+            self.b2 += np.sum(d2, axis=0, keepdims=True) * self.lr / m
+            self.w1 += np.dot(X.T, d1) * self.lr / m
+            self.b1 += np.sum(d1, axis=0, keepdims=True) * self.lr / m
+
+            if epoch % 200 == 0:
+                preds = np.argmax(a2, axis=1)
+                actuals = np.argmax(y_oh, axis=1)
+                acc = np.mean(preds == actuals) * 100
+                print(f"Epoch {epoch}, MSE: {mse:.4f}, Accuracy: {acc:.2f}%")
+
+    # Predict method
+    def predict(self, X):
+        a1 = self.relu(np.dot(X, self.w1) + self.b1)
+        a2 = self.sigmoid(np.dot(a1, self.w2) + self.b2)
+        return np.argmax(a2, axis=1)
+
+    # Accuracy
+    def accuracy(self, X, y):
+        return np.mean(self.predict(X) == y.flatten()) * 100
+
+#Sigmoid Hidden + Sigmoid Output (2 methods to test)
+class NN_SigmoidHidden:
+    def __init__(self, n_inputs, n_hidden, n_outputs, learning_rate, epochs):
+        self.lr = learning_rate
+        self.epochs = epochs
+        self.w1 = np.random.randn(n_inputs, n_hidden) * np.sqrt(1 / n_inputs)
+        self.b1 = np.zeros((1, n_hidden))
+        self.w2 = np.random.randn(n_hidden, n_outputs) * np.sqrt(1 / n_hidden)
+        self.b2 = np.zeros((1, n_outputs))
+
+    def sigmoid(self, x):
+        return 1 / (1 + np.exp(-np.clip(x, -500, 500)))
+
+    def sigmoid_derivative(self, x):
+        return x * (1 - x)
+
+    def train(self, X, y):
+        for epoch in range(self.epochs):
+            # forward
+            z1 = np.dot(X, self.w1) + self.b1
+            a1 = self.sigmoid(z1)
+            z2 = np.dot(a1, self.w2) + self.b2
+            a2 = self.sigmoid(z2)
+
+            # backprop
+            error = y - a2
+            d2 = error * self.sigmoid_derivative(a2)
+            d1 = np.dot(d2, self.w2.T) * self.sigmoid_derivative(a1)
+
+            # update
+            self.w2 += self.lr * np.dot(a1.T, d2) / X.shape[0]
+            self.b2 += self.lr * np.sum(d2, axis=0, keepdims=True) / X.shape[0]
+            self.w1 += self.lr * np.dot(X.T, d1) / X.shape[0]
+            self.b1 += self.lr * np.sum(d1, axis=0, keepdims=True) / X.shape[0]
 
     def predict(self, X):
-        probs = self.forward(X)
-        return np.argmax(probs, axis=1)
-
-# =============================================================================
-# BLOCK 4: TRAINING
-# =============================================================================
-nn = NeuralNetwork(input_size=X_train_scaled.shape[1], hidden_size=128, output_size=7)
-epochs = 2000
-learning_rate = 0.1
-
-print("\n--- Starting Model Training ---")
-for epoch in range(epochs):
-    probs = nn.forward(X_train_scaled)
-    nn.backward(X_train_scaled, y_train_oh, learning_rate)
+        a1 = self.sigmoid(np.dot(X, self.w1) + self.b1)
+        a2 = self.sigmoid(np.dot(a1, self.w2) + self.b2)
+        return (a2 > 0.5).astype(int).flatten()  # threshold 0.5
     
-    if epoch % 500 == 0:
-        loss = -np.mean(np.sum(y_train_oh * np.log(probs + 1e-15), axis=1))
-        acc = np.mean(np.argmax(probs, axis=1) == y_train)
-        print(f"Epoch {epoch}: Loss {loss:.4f}, Accuracy {acc*100:.2f}%")
+    # Accuracy
+    def accuracy(self, X, y):
+        return np.mean(self.predict(X) == y.flatten()) * 100
+
+#Tanh Hidden + Sigmoid Output (3rd method to test)
+class NN_TanhHidden:
+    def __init__(self, n_inputs, n_hidden, n_outputs, learning_rate, epochs):
+        self.lr = learning_rate
+        self.epochs = epochs
+        self.w1 = np.random.randn(n_inputs, n_hidden) * np.sqrt(1 / n_inputs)
+        self.b1 = np.zeros((1, n_hidden))
+        self.w2 = np.random.randn(n_hidden, 1) * np.sqrt(1 / n_hidden)
+        self.b2 = np.zeros((1, 1))
+
+    def tanh(self, x):
+        return np.tanh(x)
+
+    def tanh_derivative(self, a):
+        return 1 - a**2  # a = tanh(z)
+
+    def sigmoid(self, x):
+        return 1 / (1 + np.exp(-np.clip(x, -500, 500)))
+
+    def sigmoid_derivative(self, x):
+        return x * (1 - x)
+
+    def train(self, X, y):
+        for epoch in range(self.epochs):
+            # Forward
+            z1 = np.dot(X, self.w1) + self.b1
+            a1 = self.tanh(z1)
+            z2 = np.dot(a1, self.w2) + self.b2
+            a2 = self.sigmoid(z2)
+
+            # Backprop
+            error = y - a2
+            d2 = error * self.sigmoid_derivative(a2)
+            d1 = np.dot(d2, self.w2.T) * self.tanh_derivative(a1)
+
+            # Update weights
+            self.w2 += self.lr * np.dot(a1.T, d2) / X.shape[0]
+            self.b2 += self.lr * np.sum(d2, axis=0, keepdims=True) / X.shape[0]
+            self.w1 += self.lr * np.dot(X.T, d1) / X.shape[0]
+            self.b1 += self.lr * np.sum(d1, axis=0, keepdims=True) / X.shape[0]
+
+    def predict(self, X):
+        a1 = self.tanh(np.dot(X, self.w1) + self.b1)
+        a2 = self.sigmoid(np.dot(a1, self.w2) + self.b2)
+        return (a2 > 0.5).astype(int).flatten()
+
+    def accuracy(self, X, y):
+        return np.mean(self.predict(X) == y.flatten()) * 100
+
 
 # =============================================================================
-# BLOCK 5: EVALUATION
+# BLOCK 3: TRAINING
 # =============================================================================
+input_size = X_train_scaled.shape[1]
+hidden_size = 256
+output_size = np.unique(y).shape[0]
+epochs = 2000
+lr = 0.1
+
+
+print("Neural Network Structure:")
+print(f"Input Size: {input_size}")
+print(f"Hidden Size: {hidden_size}")
+print(f"Output Size: {output_size}\n")
+
+print("Training Settings :")
+print(f"Hidden Size:", hidden_size)
+print(f"Epochs:", epochs)
+print(f"Learning Rate:", lr, "\n")
+
+
+#This will go back to BLOCK 2 (BPNN & Epochs)
+nn = NN_TanhHidden(n_inputs=input_size, n_hidden=hidden_size, n_outputs=output_size,
+          learning_rate=lr, epochs=epochs)
+
+
+nn.train(X_train_scaled, y_train)
+
+
+# =============================================================================
+# BLOCK 4: EVALUATION
+# =============================================================================
+# Evaluate on training data
+
+
+# Evaluate
+train_acc = nn.accuracy(X_train_scaled, y_train)
 test_preds = nn.predict(X_test_scaled)
-print(f"\nFinal Test Accuracy: {np.mean(test_preds == y_test) * 100:.2f}%")
+test_acc = np.mean(test_preds == y_test.flatten()) * 100
 
-# Convert back to original labels for the report
-y_test_orig = [inv_mapping[i] for i in y_test]
-test_preds_orig = [inv_mapping[i] for i in test_preds]
-
-print("\nDetailed Classification Report:")
-print(classification_report(y_test_orig, test_preds_orig))
-
-print("\n--- End of Report ---")
+print("\n=== FINAL RESULTS ===")
+print(f"Training Accuracy: {train_acc:.2f}%")
+print(f"Test Accuracy: {test_acc:.2f}%")
 
 
+# =============================================================================
+# BLOCK 5: VISUALIZATION (Confusion Matrix)
+# =============================================================================
 
-#head
-#df.head()
+y_pred = nn.predict(X_test_scaled)
 
-#tail
-#df.tail()
+cm = confusion_matrix(y_test.flatten(), y_pred)
 
-#shape
-#df.shape
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+            xticklabels=['Normal', 'Shill Bidding'], 
+            yticklabels=['Normal', 'Shill Bidding'])
 
-#info
-#df.info()
+plt.title('Confusion Matrix - Shill Bidding Detection')
+plt.ylabel('Actual Class')
+plt.xlabel('Predicted Class')
+plt.show()
 
-#find missing values
-#df.isnull().sum()
+print("\n=== CLASSIFICATION REPORT ===")
+print(classification_report(y_test.flatten(), y_pred))
 
-#find duplicated
-#df.duplicated().sum()
 
-#identify useless value
-#for i in df.select_dtypes(include="object").columns:
- #   print(df[i].value_counts())
-  #  print("***"*10)
 
-#remove missing values
-#df.isnull().sum()
-#df.dropna(inplace=True)
-
-#def wisker(col):
- ###   q1,q3=np.percentile(col,[30,70])
-    #iqr=q3-q1
-    #lw=q1-1.5*iqr
-    #uw=q3+1.5*iqr
-    #return lw,uw
-
-#wisker(df['GDP'])
-#df.columns
