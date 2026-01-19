@@ -25,10 +25,10 @@ print(df.iloc[:, :7].describe())
 print("\n")
 print(df.iloc[:, 7:].describe())
 
+
 # Features & target
 X = df.drop('Class', axis=1)
 y = df['Class']  
-
 
 # Check for missing values
 missingX = X.isnull().sum()
@@ -39,9 +39,10 @@ missingY = y.isnull().sum()
 print("\nMissing values in target:")
 print(missingY)
 
+
+
 # Convert y to numpy only after checking
 y = y.values.reshape(-1,1)
-
 
 
 # Unique values for each feature
@@ -101,7 +102,7 @@ X_test_scaled = (X_test - train_mean)/train_std
 # =============================================================================
 
 # i) Relu Hidden + Sigmoid Output (first method to test)
-class NN_ReluHidden:
+class BPNN:
     def __init__(self, n_inputs, n_hidden, n_outputs, learning_rate, epochs):
         # STEP 0: Initialize weights (small random values)
         self.lr = learning_rate
@@ -114,6 +115,12 @@ class NN_ReluHidden:
         self.encoder = OneHotEncoder(sparse_output=False)
 
     # Activation functions
+    def tanh(self, x):
+        return np.tanh(x)
+
+    def tanh_derivative(self, a):
+        return 1 - a**2  
+    
     def relu(self, x):
         return np.maximum(0, x)
 
@@ -131,42 +138,35 @@ class NN_ReluHidden:
         ys = self.encoder.fit_transform(y.reshape(-1,1))
         m = X.shape[0]
 
-        # STEP 1: While stopping condition is false (Epochs/Accuracy)
         for epoch in range(self.epochs):
-            # STEP 2: For each training pair 
 
-
-            # STEP 4: Each hidden unit (Zj) sums weighted inputs & applies activation
-            # z_inj = v0j + sum(xi * vij)
+            # STEP 1: Calculate hidden layer activations
             z1 = np.dot(X, self.w1) + self.b1
-            a1 = self.relu(z1) # zj = f(z_inj)
+            a1 = self.relu(z1) 
 
-            # STEP 5: Each output unit (Yk) sums weighted inputs & applies activation
-            # y_ink = w0k + sum(zj * wjk)
+            # STEP 2: Calculate output layer activations
             z2 = np.dot(a1, self.w2) + self.b2
-            a2 = self.sigmoid(z2) # yk = f(y_ink)
+            a2 = self.sigmoid(z2) 
 
-            # STEP 6: Output unit computes error information and weight correction
-            # delta_k = (tk - yk) * f'(y_ink)
+            # STEP 3: Calculate error
             error = ys - a2
             mse = np.mean(error ** 2)
+            
+            # STEP 4: Calculate output layer error
             d2 = error * self.sigmoid_derivative(a2)
             
-            # STEP 7: Hidden unit sums delta inputs and calculates error term
-            # delta_inj = sum(delta_k * wjk)
-            # delta_j = delta_inj * f'(z_inj)
+            # STEP 5: Calculate hidden layer error
             d1 = np.dot(d2, self.w2.T) * self.relu_derivative(a1)
 
-            # STEP 8: Update weights and biases
-            # wjk(new) = wjk(old) + Delta_wjk
+            # STEP 6: Update output layer weights
             self.w2 += np.dot(a1.T, d2) * self.lr / m
             self.b2 += np.sum(d2, axis=0, keepdims=True) * self.lr / m
 
-            # vij(new) = vij(old) + Delta_vij
+            # STEP 7: Update hidden layer weights
             self.w1 += np.dot(X.T, d1) * self.lr / m
             self.b1 += np.sum(d1, axis=0, keepdims=True) * self.lr / m
 
-            # STEP 9: Check stopping condition
+
             if epoch % 200 == 0:
                 preds = np.argmax(a2, axis=1)
                 actuals = np.argmax(ys, axis=1)
@@ -192,165 +192,6 @@ class NN_ReluHidden:
         with open(filename, "rb") as f:
             return pickle.load(f)
 
-# ii) Sigmoid Hidden + Sigmoid Output (2 methods to test)
-class NN_SigmoidHidden:
-    def __init__(self, n_inputs, n_hidden, n_outputs, learning_rate, epochs):
-        # STEP 0: Initialize weights (small random values)
-        self.lr = learning_rate
-        self.epochs = epochs
-        self.w1 = np.random.randn(n_inputs, n_hidden) * np.sqrt(1 / n_inputs)
-        self.b1 = np.zeros((1, n_hidden))
-        self.w2 = np.random.randn(n_hidden, 1) * np.sqrt(1 / n_hidden) 
-        self.b2 = np.zeros((1, 1))
-
-    def sigmoid(self, x):
-        return 1 / (1 + np.exp(-np.clip(x, -500, 500)))
-
-    def sigmoid_derivative(self, x):
-        return x * (1 - x)
-
-    def train(self, X, y):
-        # STEP 1: While stopping condition is false (Epochs/Accuracy)
-        for epoch in range(self.epochs):
-            # STEP 2: For each training pair 
-
-            # STEP 4: Each hidden unit (Zj) sums weighted inputs & applies activation
-            # z_inj = v0j + sum(xi * vij)
-            z1 = np.dot(X, self.w1) + self.b1
-            a1 = self.sigmoid(z1)
-
-            # STEP 5: Each output unit (Yk) sums weighted inputs & applies activation
-            # y_ink = w0k + sum(zj * wjk)
-            z2 = np.dot(a1, self.w2) + self.b2
-            a2 = self.sigmoid(z2)
-
-            # STEP 6: Output unit computes error information and weight correction
-            # delta_k = (tk - yk) * f'(y_ink)
-            error = y - a2
-            d2 = error * self.sigmoid_derivative(a2)
-
-            # STEP 7: Hidden unit sums delta inputs and calculates error term
-            # delta_inj = sum(delta_k * wjk)
-            # delta_j = delta_inj * f'(z_inj)
-            d1 = np.dot(d2, self.w2.T) * self.sigmoid_derivative(a1)
-
-            
-            # STEP 8: Update weights and biases
-            # wjk(new) = wjk(old) + Delta_wjk
-            self.w2 += self.lr * np.dot(a1.T, d2) / X.shape[0]
-            self.b2 += self.lr * np.sum(d2, axis=0, keepdims=True) / X.shape[0]
-
-            # vij(new) = vij(old) + Delta_vij
-            self.w1 += self.lr * np.dot(X.T, d1) / X.shape[0]
-            self.b1 += self.lr * np.sum(d1, axis=0, keepdims=True) / X.shape[0]
-
-            # STEP 9: Check stopping condition
-            if epoch % 200 == 0:
-                preds = (a2 > 0.5).astype(int).flatten()
-                acc = np.mean(preds == y.flatten()) * 100
-                mse = np.mean(error**2)
-                print(f"Epoch {epoch}, Mean Squared Error: {mse:.4f}, Accuracy: {acc:.2f}%")
-
-    def predictBPNN(self, X):
-        a1 = self.sigmoid(np.dot(X, self.w1) + self.b1)
-        a2 = self.sigmoid(np.dot(a1, self.w2) + self.b2)
-        return (a2 > 0.5).astype(int).flatten()  
-
-    def accuracyBPNN(self, X, y):
-        return np.mean(self.predictBPNN(X) == y.flatten()) * 100
-    
-    def saveFile(self, filename):
-        with open(filename, "wb") as f:
-            pickle.dump(self, f)
-
-    @staticmethod
-    def loadFile(filename):
-        with open(filename, "rb") as f:
-            return pickle.load(f)
-
-
-# iii) Tanh Hidden + Sigmoid Output (3rd method to test)
-class NN_TanhHidden:
-    def __init__(self, n_inputs, n_hidden, n_outputs, learning_rate, epochs):
-        # STEP 0: Initialize weights (small random values)
-        self.lr = learning_rate
-        self.epochs = epochs
-        self.w1 = np.random.randn(n_inputs, n_hidden) * np.sqrt(1 / n_inputs)
-        self.b1 = np.zeros((1, n_hidden))
-        self.w2 = np.random.randn(n_hidden, 1) * np.sqrt(1 / n_hidden)
-        self.b2 = np.zeros((1, 1))
-
-    def tanh(self, x):
-        return np.tanh(x)
-
-    def tanh_derivative(self, a):
-        return 1 - a**2  # a = tanh(z)
-
-    def sigmoid(self, x):
-        return 1 / (1 + np.exp(-np.clip(x, -500, 500)))
-
-    def sigmoid_derivative(self, x):
-        return x * (1 - x)
-
-    def train(self, X, y):
-        # STEP 1: While stopping condition is false (Epochs/Accuracy)
-        for epoch in range(self.epochs):
-            # STEP 2: For each training pair 
-
-            # STEP 4: Each hidden unit (Zj) sums weighted inputs & applies activation
-            # z_inj = v0j + sum(xi * vij)
-            z1 = np.dot(X, self.w1) + self.b1
-            a1 = self.tanh(z1)
-
-            # STEP 5: Each output unit (Yk) sums weighted inputs & applies activation
-            # y_ink = w0k + sum(zj * wjk)
-            z2 = np.dot(a1, self.w2) + self.b2
-            a2 = self.sigmoid(z2)
-
-            # STEP 6: Output unit computes error information and weight correction
-            # delta_k = (tk - yk) * f'(y_ink)
-            error = y - a2
-            d2 = error * self.sigmoid_derivative(a2)
-
-            # STEP 7: Hidden unit sums delta inputs and calculates error term
-            # delta_inj = sum(delta_k * wjk)
-            # delta_j = delta_inj * f'(z_inj)
-            d1 = np.dot(d2, self.w2.T) * self.tanh_derivative(a1)
-
-            # STEP 8: Update weights and biases
-            # wjk(new) = wjk(old) + Delta_wjk
-            self.w2 += self.lr * np.dot(a1.T, d2) / X.shape[0]
-            self.b2 += self.lr * np.sum(d2, axis=0, keepdims=True) / X.shape[0]
-
-            # vij(new) = vij(old) + Delta_vij
-            self.w1 += self.lr * np.dot(X.T, d1) / X.shape[0]
-            self.b1 += self.lr * np.sum(d1, axis=0, keepdims=True) / X.shape[0]
-
-        
-            # STEP 9: Check stopping condition
-            if epoch % 200 == 0:
-                preds = (a2 > 0.5).astype(int).flatten()
-                acc = np.mean(preds == y.flatten()) * 100
-                mse = np.mean(error**2)
-                print(f"Epoch {epoch}, Mean Squared Error: {mse:.4f}, Accuracy: {acc:.2f}%")
-
-    def predictBPNN(self, X):
-        a1 = self.tanh(np.dot(X, self.w1) + self.b1)
-        a2 = self.sigmoid(np.dot(a1, self.w2) + self.b2)
-        return (a2 > 0.5).astype(int).flatten()
-
-    def accuracyBPNN(self, X, y):
-        return np.mean(self.predictBPNN(X) == y.flatten()) * 100
-    
-    def saveFile(self, filename):
-        with open(filename, "wb") as f:
-            pickle.dump(self, f)
-
-    @staticmethod
-    def loadFile(filename):
-        with open(filename, "rb") as f:
-            return pickle.load(f)
-
 
 # =============================================================================
 # BLOCK 3: TRAINING
@@ -359,7 +200,7 @@ input_size = X_train_scaled.shape[1]
 hidden_size = 256
 output_size = np.unique(y).shape[0]
 epochs = 2000
-lr = 0.5
+lr = 0.2
 
 
 print("Neural Network Structure:")
@@ -374,7 +215,7 @@ print(f"Learning Rate:", lr, "\n")
 
 
 #This will go back to BLOCK 2 (BPNN & Epochs)
-nn = NN_ReluHidden(n_inputs=input_size, n_hidden=hidden_size, n_outputs=output_size,
+nn = BPNN(n_inputs=input_size, n_hidden=hidden_size, n_outputs=output_size,
           learning_rate=lr, epochs=epochs)
 
 
